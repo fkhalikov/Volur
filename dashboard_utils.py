@@ -206,6 +206,36 @@ def get_finnhub_data(ticker: str) -> Dict[str, Any]:
         return {}
 
 
+def get_finnhub_financials(ticker: str) -> Dict[str, Any]:
+    """Get financial statements from Finnhub API."""
+    logger.info(f"Fetching Finnhub financials for ticker: {ticker}")
+    
+    try:
+        # Get financial statements from Finnhub API
+        financials_url = f"https://finnhub.io/api/v1/stock/financials-reported"
+        params = {
+            "symbol": ticker,
+            "freq": "annual"  # annual or quarterly
+        }
+        headers = {
+            "X-Finnhub-Token": settings.finnhub_api_key,
+            "User-Agent": "Volur/0.1.0"
+        }
+        
+        logger.info(f"Fetching financials for {ticker} (annual frequency)")
+        response = requests.get(financials_url, params=params, headers=headers, timeout=15)
+        response.raise_for_status()
+        
+        financials_data = response.json()
+        logger.info(f"Retrieved financials data for {ticker}")
+        
+        return financials_data
+        
+    except Exception as e:
+        logger.error(f"Finnhub financials API error: {e}")
+        return {}
+
+
 def get_finnhub_news(ticker: str) -> List[Dict[str, Any]]:
     """Get company news from Finnhub API."""
     logger.info(f"Fetching Finnhub news for ticker: {ticker}")

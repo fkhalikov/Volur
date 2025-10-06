@@ -11,6 +11,7 @@ from tabs.alpha_vantage_tab import render_alpha_vantage_tab
 from tabs.sec_edgar_tab import render_sec_edgar_tab
 from tabs.finnhub_tab import render_finnhub_tab
 from tabs.finnhub_news_tab import render_finnhub_news_tab
+from tabs.finnhub_financials_tab import render_finnhub_financials_tab
 from tabs.comparison_tab import render_comparison_tab
 from tabs.debug_logs_tab import render_debug_logs_tab
 
@@ -19,6 +20,7 @@ from dashboard_utils import (
     get_alpha_vantage_data, 
     get_finnhub_data, 
     get_finnhub_news,
+    get_finnhub_financials,
     SECSource
 )
 
@@ -86,12 +88,13 @@ def main():
     ).upper().strip()
     
     # Create tabs for different data sources
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "🔄 All Sources", 
         "📈 Alpha Vantage", 
         "🏛️ SEC EDGAR", 
         "📊 Finnhub", 
         "📰 Finnhub News", 
+        "📊 Finnhub Financials",
         "📊 Comparison", 
         "🐛 Debug Logs"
     ])
@@ -105,6 +108,7 @@ def main():
         market_data = None
         finnhub_data = None
         finnhub_news = []
+        finnhub_financials = {}
         sec_fundamentals = None
         
         # Fetch data from all sources
@@ -149,6 +153,19 @@ def main():
             logger.error(f"Traceback: {traceback.format_exc()}")
             st.warning(f"Finnhub news API error: {e}")
         
+        # Finnhub financials data
+        logger.info("Attempting to fetch Finnhub financials data...")
+        try:
+            finnhub_financials = get_finnhub_financials(ticker)
+            if finnhub_financials:
+                logger.info(f"[SUCCESS] Finnhub financials fetch successful")
+            else:
+                logger.warning("[WARNING] Finnhub financials fetch returned empty result")
+        except Exception as e:
+            logger.error(f"❌ Finnhub financials API error: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            st.warning(f"Finnhub financials API error: {e}")
+        
         # SEC data
         logger.info("Attempting to fetch SEC EDGAR data...")
         try:
@@ -183,9 +200,12 @@ def main():
             render_finnhub_news_tab(ticker, finnhub_news)
         
         with tab6:
-            render_comparison_tab(ticker, market_data, finnhub_data, sec_fundamentals)
+            render_finnhub_financials_tab(ticker, finnhub_financials)
         
         with tab7:
+            render_comparison_tab(ticker, market_data, finnhub_data, sec_fundamentals)
+        
+        with tab8:
             render_debug_logs_tab()
     
     else:
