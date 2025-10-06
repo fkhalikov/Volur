@@ -78,6 +78,14 @@ def render_finnhub_tab(ticker: str, finnhub_data: Optional[Dict[str, Any]]):
     """Render the Finnhub tab."""
     st.header(f"📊 Finnhub Data for {ticker}")
     
+    # Display cache status
+    from dashboard_utils import get_cache_info
+    cache_info = get_cache_info("finnhub", ticker, "quote_data")
+    if cache_info:
+        st.success(f"📅 Data cached at: {cache_info['cached_at'].strftime('%Y-%m-%d %H:%M:%S')} (Expires: {cache_info['expires_at'].strftime('%Y-%m-%d %H:%M:%S')})")
+    else:
+        st.info("ℹ️ Data not cached - fetched fresh from API")
+    
     if finnhub_data:
         display_finnhub_data(finnhub_data)
         

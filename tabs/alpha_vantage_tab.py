@@ -2,12 +2,19 @@
 
 import streamlit as st
 from typing import Dict, Any, Optional
-from dashboard_utils import format_currency, format_number, format_percentage
+from dashboard_utils import format_currency, format_number, format_percentage, get_cache_info
 
 
 def render_alpha_vantage_tab(ticker: str, market_data: Optional[Dict[str, Any]]):
     """Render the Alpha Vantage tab."""
     st.header(f"📈 Alpha Vantage Data for {ticker}")
+    
+    # Display cache status
+    cache_info = get_cache_info("alpha_vantage", ticker, "quote_data")
+    if cache_info:
+        st.success(f"📅 Data cached at: {cache_info['cached_at'].strftime('%Y-%m-%d %H:%M:%S')} (Expires: {cache_info['expires_at'].strftime('%Y-%m-%d %H:%M:%S')})")
+    else:
+        st.info("ℹ️ Data not cached - fetched fresh from API")
     
     if market_data:
         # Price Information

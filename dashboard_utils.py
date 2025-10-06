@@ -12,6 +12,7 @@ from volur.plugins.sec_source import SECSource
 from volur.plugins.finnhub_source import FinnhubSource
 from volur.plugins.base import Quote, Fundamentals
 from volur.config import settings
+from volur.mongodb_cache import get_cache
 
 logger = logging.getLogger(__name__)
 
@@ -338,3 +339,181 @@ def display_fundamentals_data(fundamentals: Fundamentals, source_name: str):
         st.metric("Debt-to-Equity", f"{fundamentals.debt_to_equity:.2f}" if fundamentals.debt_to_equity else "N/A")
     with col8:
         st.metric("Price-to-Book", f"{fundamentals.price_to_book:.2f}" if fundamentals.price_to_book else "N/A")
+
+
+# MongoDB Cached API Functions
+def get_cached_alpha_vantage_data(ticker: str, force_refresh: bool = False) -> Dict[str, Any]:
+    """Get Alpha Vantage data with MongoDB caching."""
+    cache = get_cache()
+    
+    # Check cache first (unless force refresh)
+    if not force_refresh:
+        cached_data = cache.get("alpha_vantage", ticker, "quote_data")
+        if cached_data:
+            logger.info(f"Retrieved Alpha Vantage data from cache for {ticker}")
+            return cached_data["data"]
+    
+    # Fetch fresh data
+    logger.info(f"Fetching fresh Alpha Vantage data for {ticker}")
+    data = get_alpha_vantage_data(ticker)
+    
+    # Cache the data
+    if data:
+        cache.set("alpha_vantage", ticker, "quote_data", data, ttl_hours=24)
+    
+    return data
+
+
+def get_cached_finnhub_data(ticker: str, force_refresh: bool = False) -> Dict[str, Any]:
+    """Get Finnhub data with MongoDB caching."""
+    cache = get_cache()
+    
+    # Check cache first (unless force refresh)
+    if not force_refresh:
+        cached_data = cache.get("finnhub", ticker, "quote_data")
+        if cached_data:
+            logger.info(f"Retrieved Finnhub data from cache for {ticker}")
+            return cached_data["data"]
+    
+    # Fetch fresh data
+    logger.info(f"Fetching fresh Finnhub data for {ticker}")
+    data = get_finnhub_data(ticker)
+    
+    # Cache the data
+    if data:
+        cache.set("finnhub", ticker, "quote_data", data, ttl_hours=24)
+    
+    return data
+
+
+def get_cached_finnhub_news(ticker: str, force_refresh: bool = False) -> List[Dict[str, Any]]:
+    """Get Finnhub news with MongoDB caching."""
+    cache = get_cache()
+    
+    # Check cache first (unless force refresh)
+    if not force_refresh:
+        cached_data = cache.get("finnhub", ticker, "news")
+        if cached_data:
+            logger.info(f"Retrieved Finnhub news from cache for {ticker}")
+            return cached_data["data"]
+    
+    # Fetch fresh data
+    logger.info(f"Fetching fresh Finnhub news for {ticker}")
+    data = get_finnhub_news(ticker)
+    
+    # Cache the data
+    if data:
+        cache.set("finnhub", ticker, "news", data, ttl_hours=6)  # News expires faster
+    
+    return data
+
+
+def get_cached_finnhub_financials(ticker: str, force_refresh: bool = False) -> Dict[str, Any]:
+    """Get Finnhub financials with MongoDB caching."""
+    cache = get_cache()
+    
+    # Check cache first (unless force refresh)
+    if not force_refresh:
+        cached_data = cache.get("finnhub", ticker, "financials")
+        if cached_data:
+            logger.info(f"Retrieved Finnhub financials from cache for {ticker}")
+            return cached_data["data"]
+    
+    # Fetch fresh data
+    logger.info(f"Fetching fresh Finnhub financials for {ticker}")
+    data = get_finnhub_financials(ticker)
+    
+    # Cache the data
+    if data:
+        cache.set("finnhub", ticker, "financials", data, ttl_hours=48)  # Financials can be cached longer
+    
+    return data
+
+
+def get_cached_finnhub_basic_financials(ticker: str, force_refresh: bool = False) -> Dict[str, Any]:
+    """Get Finnhub basic financials with MongoDB caching."""
+    cache = get_cache()
+    
+    # Check cache first (unless force refresh)
+    if not force_refresh:
+        cached_data = cache.get("finnhub", ticker, "basic_financials")
+        if cached_data:
+            logger.info(f"Retrieved Finnhub basic financials from cache for {ticker}")
+            return cached_data["data"]
+    
+    # Fetch fresh data
+    logger.info(f"Fetching fresh Finnhub basic financials for {ticker}")
+    data = get_finnhub_basic_financials(ticker)
+    
+    # Cache the data
+    if data:
+        cache.set("finnhub", ticker, "basic_financials", data, ttl_hours=48)  # Basic financials can be cached longer
+    
+    return data
+
+
+def get_cached_sec_data(ticker: str, force_refresh: bool = False) -> Dict[str, Any]:
+    """Get SEC data with MongoDB caching."""
+    cache = get_cache()
+    
+    # Check cache first (unless force refresh)
+    if not force_refresh:
+        cached_data = cache.get("sec", ticker, "fundamentals")
+        if cached_data:
+            logger.info(f"Retrieved SEC data from cache for {ticker}")
+            return cached_data["data"]
+    
+    # Fetch fresh data
+    logger.info(f"Fetching fresh SEC data for {ticker}")
+    try:
+        sec_source = SECSource()
+        fundamentals = sec_source.get_fundamentals(ticker)
+        
+        # Convert to dict for caching
+        data = {
+            "ticker": fundamentals.ticker,
+            "trailing_pe": fundamentals.trailing_pe,
+            "price_to_book": fundamentals.price_to_book,
+            "roe": fundamentals.roe,
+            "roa": fundamentals.roa,
+            "debt_to_equity": fundamentals.debt_to_equity,
+            "free_cash_flow": fundamentals.free_cash_flow,
+            "revenue": fundamentals.revenue,
+            "operating_margin": fundamentals.operating_margin,
+            "sector": fundamentals.sector,
+            "name": fundamentals.name
+        }
+        
+        # Cache the data
+        if data:
+            cache.set("sec", ticker, "fundamentals", data, ttl_hours=72)  # SEC data can be cached longer
+        
+        return data
+        
+    except Exception as e:
+        logger.error(f"Error fetching SEC data: {e}")
+        return {}
+
+
+def get_cache_info(source: str, ticker: str, endpoint: str) -> Optional[Dict[str, Any]]:
+    """Get cache information for a specific request."""
+    cache = get_cache()
+    return cache.get(source, ticker, endpoint)
+
+
+def clear_cache_for_source(source: str) -> int:
+    """Clear all cache entries for a specific source."""
+    cache = get_cache()
+    return cache.clear_source(source)
+
+
+def clear_cache_for_ticker(ticker: str) -> int:
+    """Clear all cache entries for a specific ticker."""
+    cache = get_cache()
+    return cache.clear_ticker(ticker)
+
+
+def get_cache_stats() -> Dict[str, Any]:
+    """Get overall cache statistics."""
+    cache = get_cache()
+    return cache.get_cache_stats()

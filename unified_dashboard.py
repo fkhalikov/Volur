@@ -18,11 +18,16 @@ from tabs.debug_logs_tab import render_debug_logs_tab
 
 # Import utilities
 from dashboard_utils import (
-    get_alpha_vantage_data, 
-    get_finnhub_data, 
-    get_finnhub_news,
-    get_finnhub_financials,
-    get_finnhub_basic_financials,
+    get_cached_alpha_vantage_data, 
+    get_cached_finnhub_data, 
+    get_cached_finnhub_news,
+    get_cached_finnhub_financials,
+    get_cached_finnhub_basic_financials,
+    get_cached_sec_data,
+    get_cache_info,
+    clear_cache_for_source,
+    clear_cache_for_ticker,
+    get_cache_stats,
     SECSource
 )
 
@@ -50,7 +55,7 @@ def main():
     """Main dashboard function."""
     
     # Header
-    st.title("📊 Volur - Unified Financial Dashboard")
+    st.title("📊 Volur - Financial Dashboard")
     st.markdown("""
     **Compare financial data from multiple sources:**
     - 📈 **Alpha Vantage**: Real-time market data
@@ -102,6 +107,20 @@ def main():
         "🐛 Debug Logs"
     ])
     
+    # Initialize session state for data if not exists
+    if 'market_data' not in st.session_state:
+        st.session_state.market_data = None
+    if 'finnhub_data' not in st.session_state:
+        st.session_state.finnhub_data = None
+    if 'finnhub_news' not in st.session_state:
+        st.session_state.finnhub_news = []
+    if 'finnhub_financials' not in st.session_state:
+        st.session_state.finnhub_financials = {}
+    if 'finnhub_basic_financials' not in st.session_state:
+        st.session_state.finnhub_basic_financials = {}
+    if 'sec_fundamentals' not in st.session_state:
+        st.session_state.sec_fundamentals = None
+    
     if st.sidebar.button("Fetch Data", type="primary") and ticker:
         
         # Initialize data sources
@@ -121,7 +140,7 @@ def main():
         # Alpha Vantage market data
         logger.info("Attempting to fetch Alpha Vantage market data...")
         try:
-            market_data = get_alpha_vantage_data(ticker)
+            market_data = get_cached_alpha_vantage_data(ticker)
             if market_data:
                 logger.info("[SUCCESS] Alpha Vantage data fetch successful")
             else:
@@ -134,7 +153,7 @@ def main():
         # Finnhub market data
         logger.info("Attempting to fetch Finnhub market data...")
         try:
-            finnhub_data = get_finnhub_data(ticker)
+            finnhub_data = get_cached_finnhub_data(ticker)
             if finnhub_data:
                 logger.info("[SUCCESS] Finnhub data fetch successful")
             else:
@@ -147,7 +166,7 @@ def main():
         # Finnhub news data
         logger.info("Attempting to fetch Finnhub news data...")
         try:
-            finnhub_news = get_finnhub_news(ticker)
+            finnhub_news = get_cached_finnhub_news(ticker)
             if finnhub_news:
                 logger.info(f"[SUCCESS] Finnhub news fetch successful - {len(finnhub_news)} articles")
             else:
@@ -160,7 +179,7 @@ def main():
         # Finnhub financials data
         logger.info("Attempting to fetch Finnhub financials data...")
         try:
-            finnhub_financials = get_finnhub_financials(ticker)
+            finnhub_financials = get_cached_finnhub_financials(ticker)
             if finnhub_financials:
                 logger.info(f"[SUCCESS] Finnhub financials fetch successful")
             else:
@@ -173,7 +192,7 @@ def main():
         # Finnhub basic financials data
         logger.info("Attempting to fetch Finnhub basic financials data...")
         try:
-            finnhub_basic_financials = get_finnhub_basic_financials(ticker)
+            finnhub_basic_financials = get_cached_finnhub_basic_financials(ticker)
             if finnhub_basic_financials:
                 logger.info(f"[SUCCESS] Finnhub basic financials fetch successful")
             else:
@@ -186,9 +205,24 @@ def main():
         # SEC data
         logger.info("Attempting to fetch SEC EDGAR data...")
         try:
-            sec_fundamentals = sec_source.get_fundamentals(ticker)
-            if sec_fundamentals:
+            sec_data = get_cached_sec_data(ticker)
+            if sec_data:
                 logger.info("[SUCCESS] SEC EDGAR data fetch successful")
+                # Convert back to Fundamentals object for compatibility
+                from volur.plugins.base import Fundamentals
+                sec_fundamentals = Fundamentals(
+                    ticker=sec_data.get("ticker", ticker),
+                    trailing_pe=sec_data.get("trailing_pe"),
+                    price_to_book=sec_data.get("price_to_book"),
+                    roe=sec_data.get("roe"),
+                    roa=sec_data.get("roa"),
+                    debt_to_equity=sec_data.get("debt_to_equity"),
+                    free_cash_flow=sec_data.get("free_cash_flow"),
+                    revenue=sec_data.get("revenue"),
+                    operating_margin=sec_data.get("operating_margin"),
+                    sector=sec_data.get("sector"),
+                    name=sec_data.get("name")
+                )
                 logger.info(f"SEC data fields: {[f for f in sec_fundamentals.__dataclass_fields__ if getattr(sec_fundamentals, f) is not None]}")
             else:
                 logger.warning("[WARNING] SEC EDGAR data fetch returned empty result")
@@ -200,30 +234,359 @@ def main():
         # Calculate total fetch time
         logger.info(f"Data fetch completed")
         
-        # Render tabs with data
+        # Store data in session state
+        st.session_state.market_data = market_data
+        st.session_state.finnhub_data = finnhub_data
+        st.session_state.finnhub_news = finnhub_news
+        st.session_state.finnhub_financials = finnhub_financials
+        st.session_state.finnhub_basic_financials = finnhub_basic_financials
+        st.session_state.sec_fundamentals = sec_fundamentals
+        
+        # Display cache status and refresh controls
+        st.divider()
+        st.subheader("🗄️ Cache Status & Controls")
+        
+        # Create columns for cache info and refresh buttons
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.markdown("**Cache Status**")
+            # Get cache info for each source
+            alpha_cache = get_cache_info("alpha_vantage", ticker, "quote_data")
+            if alpha_cache:
+                st.success(f"✅ Alpha Vantage: {alpha_cache['cached_at'].strftime('%H:%M:%S')}")
+            else:
+                st.info("ℹ️ Alpha Vantage: Not cached")
+        
+        with col2:
+            finnhub_cache = get_cache_info("finnhub", ticker, "quote_data")
+            if finnhub_cache:
+                st.success(f"✅ Finnhub: {finnhub_cache['cached_at'].strftime('%H:%M:%S')}")
+            else:
+                st.info("ℹ️ Finnhub: Not cached")
+        
+        with col3:
+            sec_cache = get_cache_info("sec", ticker, "fundamentals")
+            if sec_cache:
+                st.success(f"✅ SEC: {sec_cache['cached_at'].strftime('%H:%M:%S')}")
+            else:
+                st.info("ℹ️ SEC: Not cached")
+        
+        with col4:
+            st.markdown("**Quick Actions**")
+            if st.button("🔄 Refresh All", key="refresh_all"):
+                st.rerun()
+        
+        # Cache management buttons
+        st.markdown("**Cache Management**")
+        cache_col1, cache_col2, cache_col3, cache_col4 = st.columns(4)
+        
+        with cache_col1:
+            if st.button("🗑️ Clear Alpha Vantage Cache", key="clear_alpha"):
+                cleared = clear_cache_for_source("alpha_vantage")
+                st.success(f"Cleared {cleared} Alpha Vantage cache entries")
+                st.rerun()
+        
+        with cache_col2:
+            if st.button("🗑️ Clear Finnhub Cache", key="clear_finnhub"):
+                cleared = clear_cache_for_source("finnhub")
+                st.success(f"Cleared {cleared} Finnhub cache entries")
+                st.rerun()
+        
+        with cache_col3:
+            if st.button("🗑️ Clear SEC Cache", key="clear_sec"):
+                cleared = clear_cache_for_source("sec")
+                st.success(f"Cleared {cleared} SEC cache entries")
+                st.rerun()
+        
+        with cache_col4:
+            if st.button("🗑️ Clear All Cache", key="clear_all"):
+                total_cleared = 0
+                total_cleared += clear_cache_for_source("alpha_vantage")
+                total_cleared += clear_cache_for_source("finnhub")
+                total_cleared += clear_cache_for_source("sec")
+                st.success(f"Cleared {total_cleared} total cache entries")
+                st.rerun()
+        
+        # Cache statistics
+        with st.expander("📊 Cache Statistics"):
+            stats = get_cache_stats()
+            if stats:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Entries", stats.get("total_entries", 0))
+                with col2:
+                    st.metric("Active Entries", stats.get("active_entries", 0))
+                with col3:
+                    st.metric("Expired Entries", stats.get("expired_entries", 0))
+                
+                if stats.get("source_counts"):
+                    st.markdown("**Entries by Source:**")
+                    for source, count in stats["source_counts"].items():
+                        st.write(f"- {source.title()}: {count}")
+        
+        st.divider()
+        
+        # Render tabs with data and individual refresh buttons
         with tab1:
-            render_all_sources_tab(ticker, market_data, finnhub_data, sec_fundamentals)
+            # Add refresh button for this tab
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh All Sources", key="refresh_tab1"):
+                    # Force refresh all sources and update session state
+                    market_data = get_cached_alpha_vantage_data(ticker, force_refresh=True)
+                    finnhub_data = get_cached_finnhub_data(ticker, force_refresh=True)
+                    sec_data = get_cached_sec_data(ticker, force_refresh=True)
+                    if sec_data:
+                        from volur.plugins.base import Fundamentals
+                        sec_fundamentals = Fundamentals(
+                            ticker=sec_data.get("ticker", ticker),
+                            trailing_pe=sec_data.get("trailing_pe"),
+                            price_to_book=sec_data.get("price_to_book"),
+                            roe=sec_data.get("roe"),
+                            roa=sec_data.get("roa"),
+                            debt_to_equity=sec_data.get("debt_to_equity"),
+                            free_cash_flow=sec_data.get("free_cash_flow"),
+                            revenue=sec_data.get("revenue"),
+                            operating_margin=sec_data.get("operating_margin"),
+                            sector=sec_data.get("sector"),
+                            name=sec_data.get("name")
+                        )
+                    # Update session state with fresh data
+                    st.session_state.market_data = market_data
+                    st.session_state.finnhub_data = finnhub_data
+                    st.session_state.sec_fundamentals = sec_fundamentals
+                    st.rerun()
+            render_all_sources_tab(ticker, st.session_state.market_data, st.session_state.finnhub_data, st.session_state.sec_fundamentals)
         
         with tab2:
-            render_alpha_vantage_tab(ticker, market_data)
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh Alpha Vantage", key="refresh_tab2"):
+                    market_data = get_cached_alpha_vantage_data(ticker, force_refresh=True)
+                    st.session_state.market_data = market_data
+                    st.rerun()
+            render_alpha_vantage_tab(ticker, st.session_state.market_data)
         
         with tab3:
-            render_sec_edgar_tab(ticker, sec_fundamentals)
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh SEC", key="refresh_tab3"):
+                    sec_data = get_cached_sec_data(ticker, force_refresh=True)
+                    if sec_data:
+                        from volur.plugins.base import Fundamentals
+                        sec_fundamentals = Fundamentals(
+                            ticker=sec_data.get("ticker", ticker),
+                            trailing_pe=sec_data.get("trailing_pe"),
+                            price_to_book=sec_data.get("price_to_book"),
+                            roe=sec_data.get("roe"),
+                            roa=sec_data.get("roa"),
+                            debt_to_equity=sec_data.get("debt_to_equity"),
+                            free_cash_flow=sec_data.get("free_cash_flow"),
+                            revenue=sec_data.get("revenue"),
+                            operating_margin=sec_data.get("operating_margin"),
+                            sector=sec_data.get("sector"),
+                            name=sec_data.get("name")
+                        )
+                        st.session_state.sec_fundamentals = sec_fundamentals
+                    st.rerun()
+            render_sec_edgar_tab(ticker, st.session_state.sec_fundamentals)
         
         with tab4:
-            render_finnhub_tab(ticker, finnhub_data)
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh Finnhub", key="refresh_tab4"):
+                    finnhub_data = get_cached_finnhub_data(ticker, force_refresh=True)
+                    st.session_state.finnhub_data = finnhub_data
+                    st.rerun()
+            render_finnhub_tab(ticker, st.session_state.finnhub_data)
         
         with tab5:
-            render_finnhub_news_tab(ticker, finnhub_news)
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh News", key="refresh_tab5"):
+                    finnhub_news = get_cached_finnhub_news(ticker, force_refresh=True)
+                    st.session_state.finnhub_news = finnhub_news
+                    st.rerun()
+            render_finnhub_news_tab(ticker, st.session_state.finnhub_news)
         
         with tab6:
-            render_finnhub_financials_tab(ticker, finnhub_financials)
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh Financials", key="refresh_tab6"):
+                    finnhub_financials = get_cached_finnhub_financials(ticker, force_refresh=True)
+                    st.session_state.finnhub_financials = finnhub_financials
+                    st.rerun()
+            render_finnhub_financials_tab(ticker, st.session_state.finnhub_financials)
         
         with tab7:
-            render_finnhub_basic_financials_tab(ticker, finnhub_basic_financials)
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh Basic Financials", key="refresh_tab7"):
+                    finnhub_basic_financials = get_cached_finnhub_basic_financials(ticker, force_refresh=True)
+                    st.session_state.finnhub_basic_financials = finnhub_basic_financials
+                    st.rerun()
+            render_finnhub_basic_financials_tab(ticker, st.session_state.finnhub_basic_financials)
         
         with tab8:
-            render_comparison_tab(ticker, market_data, finnhub_data, sec_fundamentals)
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh Comparison", key="refresh_tab8"):
+                    # Force refresh all sources for comparison
+                    market_data = get_cached_alpha_vantage_data(ticker, force_refresh=True)
+                    finnhub_data = get_cached_finnhub_data(ticker, force_refresh=True)
+                    sec_data = get_cached_sec_data(ticker, force_refresh=True)
+                    if sec_data:
+                        from volur.plugins.base import Fundamentals
+                        sec_fundamentals = Fundamentals(
+                            ticker=sec_data.get("ticker", ticker),
+                            trailing_pe=sec_data.get("trailing_pe"),
+                            price_to_book=sec_data.get("price_to_book"),
+                            roe=sec_data.get("roe"),
+                            roa=sec_data.get("roa"),
+                            debt_to_equity=sec_data.get("debt_to_equity"),
+                            free_cash_flow=sec_data.get("free_cash_flow"),
+                            revenue=sec_data.get("revenue"),
+                            operating_margin=sec_data.get("operating_margin"),
+                            sector=sec_data.get("sector"),
+                            name=sec_data.get("name")
+                        )
+                    # Update session state with fresh data
+                    st.session_state.market_data = market_data
+                    st.session_state.finnhub_data = finnhub_data
+                    st.session_state.sec_fundamentals = sec_fundamentals
+                    st.rerun()
+            render_comparison_tab(ticker, st.session_state.market_data, st.session_state.finnhub_data, st.session_state.sec_fundamentals)
+        
+        with tab9:
+            render_debug_logs_tab()
+    
+    elif any([st.session_state.market_data, st.session_state.finnhub_data, st.session_state.sec_fundamentals]):
+        # Render tabs with cached data from session state
+        with tab1:
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh All Sources", key="refresh_tab1"):
+                    market_data = get_cached_alpha_vantage_data(ticker, force_refresh=True)
+                    finnhub_data = get_cached_finnhub_data(ticker, force_refresh=True)
+                    sec_data = get_cached_sec_data(ticker, force_refresh=True)
+                    if sec_data:
+                        from volur.plugins.base import Fundamentals
+                        sec_fundamentals = Fundamentals(
+                            ticker=sec_data.get("ticker", ticker),
+                            trailing_pe=sec_data.get("trailing_pe"),
+                            price_to_book=sec_data.get("price_to_book"),
+                            roe=sec_data.get("roe"),
+                            roa=sec_data.get("roa"),
+                            debt_to_equity=sec_data.get("debt_to_equity"),
+                            free_cash_flow=sec_data.get("free_cash_flow"),
+                            revenue=sec_data.get("revenue"),
+                            operating_margin=sec_data.get("operating_margin"),
+                            sector=sec_data.get("sector"),
+                            name=sec_data.get("name")
+                        )
+                    st.session_state.market_data = market_data
+                    st.session_state.finnhub_data = finnhub_data
+                    st.session_state.sec_fundamentals = sec_fundamentals
+                    st.rerun()
+            render_all_sources_tab(ticker, st.session_state.market_data, st.session_state.finnhub_data, st.session_state.sec_fundamentals)
+        
+        with tab2:
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh Alpha Vantage", key="refresh_tab2"):
+                    market_data = get_cached_alpha_vantage_data(ticker, force_refresh=True)
+                    st.session_state.market_data = market_data
+                    st.rerun()
+            render_alpha_vantage_tab(ticker, st.session_state.market_data)
+        
+        with tab3:
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh SEC", key="refresh_tab3"):
+                    sec_data = get_cached_sec_data(ticker, force_refresh=True)
+                    if sec_data:
+                        from volur.plugins.base import Fundamentals
+                        sec_fundamentals = Fundamentals(
+                            ticker=sec_data.get("ticker", ticker),
+                            trailing_pe=sec_data.get("trailing_pe"),
+                            price_to_book=sec_data.get("price_to_book"),
+                            roe=sec_data.get("roe"),
+                            roa=sec_data.get("roa"),
+                            debt_to_equity=sec_data.get("debt_to_equity"),
+                            free_cash_flow=sec_data.get("free_cash_flow"),
+                            revenue=sec_data.get("revenue"),
+                            operating_margin=sec_data.get("operating_margin"),
+                            sector=sec_data.get("sector"),
+                            name=sec_data.get("name")
+                        )
+                        st.session_state.sec_fundamentals = sec_fundamentals
+                    st.rerun()
+            render_sec_edgar_tab(ticker, st.session_state.sec_fundamentals)
+        
+        with tab4:
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh Finnhub", key="refresh_tab4"):
+                    finnhub_data = get_cached_finnhub_data(ticker, force_refresh=True)
+                    st.session_state.finnhub_data = finnhub_data
+                    st.rerun()
+            render_finnhub_tab(ticker, st.session_state.finnhub_data)
+        
+        with tab5:
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh News", key="refresh_tab5"):
+                    finnhub_news = get_cached_finnhub_news(ticker, force_refresh=True)
+                    st.session_state.finnhub_news = finnhub_news
+                    st.rerun()
+            render_finnhub_news_tab(ticker, st.session_state.finnhub_news)
+        
+        with tab6:
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh Financials", key="refresh_tab6"):
+                    finnhub_financials = get_cached_finnhub_financials(ticker, force_refresh=True)
+                    st.session_state.finnhub_financials = finnhub_financials
+                    st.rerun()
+            render_finnhub_financials_tab(ticker, st.session_state.finnhub_financials)
+        
+        with tab7:
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh Basic Financials", key="refresh_tab7"):
+                    finnhub_basic_financials = get_cached_finnhub_basic_financials(ticker, force_refresh=True)
+                    st.session_state.finnhub_basic_financials = finnhub_basic_financials
+                    st.rerun()
+            render_finnhub_basic_financials_tab(ticker, st.session_state.finnhub_basic_financials)
+        
+        with tab8:
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh Comparison", key="refresh_tab8"):
+                    market_data = get_cached_alpha_vantage_data(ticker, force_refresh=True)
+                    finnhub_data = get_cached_finnhub_data(ticker, force_refresh=True)
+                    sec_data = get_cached_sec_data(ticker, force_refresh=True)
+                    if sec_data:
+                        from volur.plugins.base import Fundamentals
+                        sec_fundamentals = Fundamentals(
+                            ticker=sec_data.get("ticker", ticker),
+                            trailing_pe=sec_data.get("trailing_pe"),
+                            price_to_book=sec_data.get("price_to_book"),
+                            roe=sec_data.get("roe"),
+                            roa=sec_data.get("roa"),
+                            debt_to_equity=sec_data.get("debt_to_equity"),
+                            free_cash_flow=sec_data.get("free_cash_flow"),
+                            revenue=sec_data.get("revenue"),
+                            operating_margin=sec_data.get("operating_margin"),
+                            sector=sec_data.get("sector"),
+                            name=sec_data.get("name")
+                        )
+                    st.session_state.market_data = market_data
+                    st.session_state.finnhub_data = finnhub_data
+                    st.session_state.sec_fundamentals = sec_fundamentals
+                    st.rerun()
+            render_comparison_tab(ticker, st.session_state.market_data, st.session_state.finnhub_data, st.session_state.sec_fundamentals)
         
         with tab9:
             render_debug_logs_tab()
