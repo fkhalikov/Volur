@@ -236,6 +236,36 @@ def get_finnhub_financials(ticker: str) -> Dict[str, Any]:
         return {}
 
 
+def get_finnhub_basic_financials(ticker: str) -> Dict[str, Any]:
+    """Get basic financial metrics from Finnhub API."""
+    logger.info(f"Fetching Finnhub basic financials for ticker: {ticker}")
+    
+    try:
+        # Get basic financial metrics from Finnhub API
+        basic_financials_url = f"https://finnhub.io/api/v1/stock/metric"
+        params = {
+            "symbol": ticker,
+            "metric": "all"  # Get all available metrics
+        }
+        headers = {
+            "X-Finnhub-Token": settings.finnhub_api_key,
+            "User-Agent": "Volur/0.1.0"
+        }
+        
+        logger.info(f"Fetching basic financials for {ticker}")
+        response = requests.get(basic_financials_url, params=params, headers=headers, timeout=15)
+        response.raise_for_status()
+        
+        basic_financials_data = response.json()
+        logger.info(f"Retrieved basic financials data for {ticker}")
+        
+        return basic_financials_data
+        
+    except Exception as e:
+        logger.error(f"Finnhub basic financials API error: {e}")
+        return {}
+
+
 def get_finnhub_news(ticker: str) -> List[Dict[str, Any]]:
     """Get company news from Finnhub API."""
     logger.info(f"Fetching Finnhub news for ticker: {ticker}")
