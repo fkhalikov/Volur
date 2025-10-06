@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     fmp_api_key: Optional[str] = Field(default=None, description="Financial Modeling Prep API key")
     sec_user_agent: str = Field(default="Volur/0.1.0", description="User agent for SEC API requests")
     alpha_vantage_api_key: Optional[str] = Field(default=None, description="Alpha Vantage API key")
+    finnhub_api_key: Optional[str] = Field(default=None, description="Finnhub API key")
 
     # Cache settings
     cache_ttl_hours: int = Field(default=24, description="Cache TTL in hours")

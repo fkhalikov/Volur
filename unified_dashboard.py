@@ -11,6 +11,7 @@ from datetime import datetime
 
 # Import Volur components
 from volur.plugins.sec_source import SECSource
+from volur.plugins.finnhub_source import FinnhubSource
 from volur.plugins.base import Quote, Fundamentals
 from volur.config import settings
 
@@ -121,6 +122,104 @@ def get_market_data(ticker: str) -> Dict[str, Any]:
     return get_alpha_vantage_data(ticker)
 
 
+def get_finnhub_data(ticker: str) -> Dict[str, Any]:
+    """Get market data from Finnhub API."""
+    logger.info(f"Fetching Finnhub data for ticker: {ticker}")
+    
+    try:
+        finnhub_source = FinnhubSource()
+        quote = finnhub_source.get_quote(ticker)
+        
+        if quote:
+            logger.info("[SUCCESS] Finnhub data retrieved successfully")
+            
+            # Get additional data from Finnhub API directly for dashboard display
+            try:
+                # Get quote data for additional fields
+                quote_url = f"https://finnhub.io/api/v1/quote"
+                params = {"symbol": ticker}
+                headers = {
+                    "X-Finnhub-Token": settings.finnhub_api_key,
+                    "User-Agent": "Volur/0.1.0"
+                }
+                
+                response = requests.get(quote_url, params=params, headers=headers, timeout=10)
+                quote_data = response.json() if response.status_code == 200 else {}
+                
+                # Get company profile for additional fields
+                profile_url = f"https://finnhub.io/api/v1/stock/profile2"
+                profile_params = {"symbol": ticker}
+                
+                profile_response = requests.get(profile_url, params=profile_params, headers=headers, timeout=10)
+                profile_data = profile_response.json() if profile_response.status_code == 200 else {}
+                
+                return {
+                    # Basic quote data
+                    "regularMarketPrice": quote.price,
+                    "regularMarketPreviousClose": quote_data.get('pc', 0.0),
+                    "regularMarketDayHigh": quote_data.get('h', 0.0),
+                    "regularMarketDayLow": quote_data.get('l', 0.0),
+                    "regularMarketVolume": quote_data.get('v', 0),
+                    "open": quote_data.get('o', 0.0),
+                    "change": quote_data.get('d', 0.0),
+                    "change_percent": quote_data.get('dp', 0.0),
+                    "timestamp": quote_data.get('t', 0),
+                    
+                    # Company profile data
+                    "marketCap": profile_data.get('marketCapitalization', 0.0),
+                    "longName": profile_data.get('name', ticker),
+                    "ticker": profile_data.get('ticker', ticker),
+                    "sector": profile_data.get('finnhubIndustry', 'Unknown'),
+                    "industry": profile_data.get('finnhubIndustry', 'Unknown'),
+                    "exchange": profile_data.get('exchange', 'Unknown'),
+                    "country": profile_data.get('country', 'Unknown'),
+                    "currency": profile_data.get('currency', 'USD'),
+                    "sharesOutstanding": profile_data.get('shareOutstanding'),
+                    "ipo": profile_data.get('ipo', 'N/A'),
+                    "phone": profile_data.get('phone', 'N/A'),
+                    "weburl": profile_data.get('weburl', ''),
+                    "logo": profile_data.get('logo', ''),
+                    
+                    # Additional fields (not available from basic quote)
+                    "trailingPE": None,
+                    "forwardPE": None,
+                    "priceToBook": None,
+                    "beta": None,
+                    "dividendYield": None,
+                    "fiftyTwoWeekHigh": None,
+                    "fiftyTwoWeekLow": None
+                }
+            except Exception as e:
+                logger.error(f"Error getting additional Finnhub data: {e}")
+                # Return basic data from Quote object
+                return {
+                    "regularMarketPrice": quote.price,
+                    "regularMarketPreviousClose": None,
+                    "regularMarketDayHigh": None,
+                    "regularMarketDayLow": None,
+                    "regularMarketVolume": None,
+                    "marketCap": None,
+                    "longName": ticker,
+                    "sector": "Unknown",
+                    "industry": "Unknown",
+                    "exchange": "Unknown",
+                    "trailingPE": None,
+                    "forwardPE": None,
+                    "priceToBook": None,
+                    "beta": None,
+                    "dividendYield": None,
+                    "fiftyTwoWeekHigh": None,
+                    "fiftyTwoWeekLow": None
+                }
+        else:
+            logger.warning("Finnhub returned empty quote data")
+            return {}
+            
+    except Exception as e:
+        logger.error(f"Finnhub API error: {e}")
+        return {}
+
+
 def display_quote_data(quote: Quote, source_name: str):
     """Display quote data in a formatted way."""
     st.subheader(f"📈 Quote Data ({source_name})")
@@ -202,6 +301,75 @@ def display_market_data(data: Dict[str, Any]):
         st.metric("52 Week Low", format_currency(data.get('fiftyTwoWeekLow')))
 
 
+def display_finnhub_data(data: Dict[str, Any]):
+    """Display comprehensive Finnhub data with logo."""
+    st.subheader("📊 Finnhub Market Data")
+    
+    # Company Logo and Basic Info
+    col1, col2, col3 = st.columns([1, 2, 2])
+    with col1:
+        if data.get('logo'):
+            st.image(data['logo'], width=100, caption=data.get('longName', 'Company Logo'))
+        else:
+            st.write("📊")
+    with col2:
+        st.metric("Company", data.get('longName', 'N/A'))
+        st.metric("Ticker", data.get('ticker', 'N/A'))
+    with col3:
+        st.metric("Exchange", data.get('exchange', 'N/A'))
+        st.metric("Country", data.get('country', 'N/A'))
+    
+    # Price Data
+    st.subheader("💰 Price Information")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Current Price", format_currency(data.get('regularMarketPrice')))
+    with col2:
+        st.metric("Previous Close", format_currency(data.get('regularMarketPreviousClose')))
+    with col3:
+        st.metric("Day High", format_currency(data.get('regularMarketDayHigh')))
+    with col4:
+        st.metric("Day Low", format_currency(data.get('regularMarketDayLow')))
+    
+    # Additional Price Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Open", format_currency(data.get('open')))
+    with col2:
+        st.metric("Change", format_currency(data.get('change')))
+    with col3:
+        st.metric("Change %", format_percentage(data.get('change_percent')))
+    with col4:
+        st.metric("Volume", format_number(data.get('regularMarketVolume')))
+    
+    # Market Data
+    st.subheader("📈 Market Information")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Market Cap", format_currency(data.get('marketCap')))
+    with col2:
+        st.metric("Shares Outstanding", format_number(data.get('sharesOutstanding')))
+    with col3:
+        st.metric("Currency", data.get('currency', 'N/A'))
+    with col4:
+        st.metric("IPO Date", data.get('ipo', 'N/A'))
+    
+    # Company Details
+    st.subheader("🏢 Company Details")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Sector", data.get('sector', 'N/A'))
+    with col2:
+        st.metric("Industry", data.get('industry', 'N/A'))
+    with col3:
+        st.metric("Phone", data.get('phone', 'N/A'))
+    with col4:
+        if data.get('weburl'):
+            st.markdown(f"[Website]({data['weburl']})")
+        else:
+            st.metric("Website", "N/A")
+
+
 def main():
     st.set_page_config(
         page_title="Volur Unified Dashboard",
@@ -210,7 +378,7 @@ def main():
     )
 
     st.title("📊 Volur Unified Dashboard")
-    st.markdown("Compare stock data from multiple sources: Alpha Vantage and SEC EDGAR")
+    st.markdown("Compare stock data from multiple sources: Alpha Vantage, Finnhub, and SEC EDGAR")
 
     # Sidebar for ticker input
     st.sidebar.header("Input")
@@ -221,7 +389,7 @@ def main():
     ).upper().strip()
 
     # Create tabs for different data sources
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔄 All Sources", "📈 Alpha Vantage", "🏛️ SEC EDGAR", "📊 Comparison", "🐛 Debug Logs"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🔄 All Sources", "📈 Alpha Vantage", "🏛️ SEC EDGAR", "📊 Finnhub", "📊 Comparison", "🐛 Debug Logs"])
 
     if st.sidebar.button("Fetch Data", type="primary") and ticker:
         
@@ -246,6 +414,20 @@ def main():
                 logger.error(f"❌ Alpha Vantage API error: {e}")
                 logger.error(f"Traceback: {traceback.format_exc()}")
                 st.warning(f"Alpha Vantage API error: {e}")
+            
+            # Finnhub market data
+            finnhub_data = None
+            logger.info("Attempting to fetch Finnhub market data...")
+            try:
+                finnhub_data = get_finnhub_data(ticker)
+                if finnhub_data:
+                    logger.info("[SUCCESS] Finnhub data fetch successful")
+                else:
+                    logger.warning("[WARNING] Finnhub data fetch returned empty result")
+            except Exception as e:
+                logger.error(f"❌ Finnhub API error: {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                st.warning(f"Finnhub API error: {e}")
             
             # SEC data
             sec_fundamentals = None
@@ -275,13 +457,18 @@ def main():
             else:
                 st.error("❌ Alpha Vantage - Failed")
             
+            if finnhub_data:
+                st.success("✅ Finnhub - Available")
+            else:
+                st.error("❌ Finnhub - Failed")
+            
             if sec_fundamentals:
                 st.success("✅ SEC EDGAR - Available")
             else:
                 st.error("❌ SEC EDGAR - Failed")
             
             # Quick comparison table
-            if market_data or sec_fundamentals:
+            if market_data or finnhub_data or sec_fundamentals:
                 st.subheader("📊 Quick Comparison")
                 
                 comparison_data = []
@@ -294,6 +481,16 @@ def main():
                         "P/E": format_number(market_data.get('trailingPE')),
                         "Market Cap": format_currency(market_data.get('marketCap')),
                         "Company": market_data.get('longName', 'N/A')
+                    })
+                
+                # Finnhub
+                if finnhub_data:
+                    comparison_data.append({
+                        "Source": "Finnhub",
+                        "Price": format_currency(finnhub_data.get('regularMarketPrice')),
+                        "P/E": format_number(finnhub_data.get('trailingPE')),
+                        "Market Cap": format_currency(finnhub_data.get('marketCap')),
+                        "Company": finnhub_data.get('longName', 'N/A')
                     })
                 
                 # SEC EDGAR
@@ -346,11 +543,24 @@ def main():
             else:
                 st.error("Could not retrieve SEC EDGAR data. Please check the ticker symbol.")
 
-        # Tab 4: Detailed Comparison
+        # Tab 4: Finnhub
         with tab4:
+            st.header(f"📊 Finnhub Data for {ticker}")
+            
+            if finnhub_data:
+                display_finnhub_data(finnhub_data)
+                
+                # Raw data
+                with st.expander("🔍 Raw Finnhub Data"):
+                    st.json(finnhub_data)
+            else:
+                st.error("Could not retrieve Finnhub data. Please check the ticker symbol and API key configuration.")
+
+        # Tab 5: Detailed Comparison
+        with tab5:
             st.header(f"📊 Detailed Comparison for {ticker}")
             
-            if market_data and sec_fundamentals:
+            if market_data or finnhub_data or sec_fundamentals:
                 st.subheader("📈 Financial Metrics Comparison")
                 
                 # Create comparison table
@@ -365,7 +575,7 @@ def main():
                         "Debt/Equity"
                     ],
                     "Alpha Vantage": [
-                        format_number(market_data.get('trailingPE')),
+                        format_number(market_data.get('trailingPE') if market_data else None),
                         "N/A (Not available via Alpha Vantage)",
                         "N/A (Not available via Alpha Vantage)",
                         "N/A (Not available via Alpha Vantage)",
@@ -373,14 +583,23 @@ def main():
                         "N/A (Not available via Alpha Vantage)",
                         "N/A (Not available via Alpha Vantage)"
                     ],
+                    "Finnhub": [
+                        format_number(finnhub_data.get('trailingPE') if finnhub_data else None),
+                        "N/A (Not available via Finnhub)",
+                        "N/A (Not available via Finnhub)",
+                        "N/A (Not available via Finnhub)",
+                        "N/A (Not available via Finnhub)",
+                        "N/A (Not available via Finnhub)",
+                        "N/A (Not available via Finnhub)"
+                    ],
                     "SEC EDGAR": [
-                        format_number(sec_fundamentals.trailing_pe),
-                        format_currency(sec_fundamentals.free_cash_flow),
-                        format_currency(sec_fundamentals.revenue),
-                        format_percentage(sec_fundamentals.operating_margin),
-                        format_percentage(sec_fundamentals.roe),
-                        format_percentage(sec_fundamentals.roa),
-                        format_number(sec_fundamentals.debt_to_equity)
+                        format_number(sec_fundamentals.trailing_pe if sec_fundamentals else None),
+                        format_currency(sec_fundamentals.free_cash_flow if sec_fundamentals else None),
+                        format_currency(sec_fundamentals.revenue if sec_fundamentals else None),
+                        format_percentage(sec_fundamentals.operating_margin if sec_fundamentals else None),
+                        format_percentage(sec_fundamentals.roe if sec_fundamentals else None),
+                        format_percentage(sec_fundamentals.roa if sec_fundamentals else None),
+                        format_number(sec_fundamentals.debt_to_equity if sec_fundamentals else None)
                     ]
                 }
                 
@@ -389,7 +608,7 @@ def main():
                 
                 # Data source comparison
                 st.subheader("📊 Data Source Comparison")
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 
                 with col1:
                     st.markdown("**Alpha Vantage Advantages:**")
@@ -403,6 +622,17 @@ def main():
                     """)
                 
                 with col2:
+                    st.markdown("**Finnhub Advantages:**")
+                    st.markdown("""
+                    ✅ Real-time stock prices  
+                    ✅ Market data (volume, high/low)  
+                    ✅ Company profiles  
+                    ✅ Financial metrics  
+                    ✅ News and sentiment  
+                    ✅ Free tier available  
+                    """)
+                
+                with col3:
                     st.markdown("**SEC EDGAR Advantages:**")
                     st.markdown("""
                     ✅ Official audited financial data  
@@ -466,6 +696,7 @@ def main():
     st.sidebar.info("""
     **Data Sources:**
     - 📈 Alpha Vantage: Real-time market data
+    - 📊 Finnhub: Real-time market data & company profiles
     - 🏛️ SEC EDGAR: Official financial filings
     """)
     
