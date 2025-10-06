@@ -13,6 +13,7 @@ from tabs.finnhub_tab import render_finnhub_tab
 from tabs.finnhub_news_tab import render_finnhub_news_tab
 from tabs.finnhub_financials_tab import render_finnhub_financials_tab
 from tabs.finnhub_basic_financials_tab import render_finnhub_basic_financials_tab
+from tabs.securities_listing_tab import render_securities_listing_tab
 from tabs.comparison_tab import render_comparison_tab
 from tabs.debug_logs_tab import render_debug_logs_tab
 
@@ -24,6 +25,7 @@ from dashboard_utils import (
     get_cached_finnhub_financials,
     get_cached_finnhub_basic_financials,
     get_cached_sec_data,
+    get_cached_alpha_vantage_listing_status,
     get_cache_info,
     clear_cache_for_source,
     clear_cache_for_ticker,
@@ -95,14 +97,15 @@ def main():
     ).upper().strip()
     
     # Create tabs for different data sources
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
         "🔄 All Sources", 
         "📈 Alpha Vantage", 
-        "🏛️ SEC EDGAR", 
-        "📊 Finnhub", 
-        "📰 Finnhub News", 
+        "🏛️ SEC EDGAR",
+        "📊 Finnhub",
+        "📰 Finnhub News",
         "📊 Finnhub Financials",
         "📊 Finnhub Basic Financials",
+        "📋 Securities Listing",
         "📊 Comparison", 
         "🐛 Debug Logs"
     ])
@@ -120,6 +123,8 @@ def main():
         st.session_state.finnhub_basic_financials = {}
     if 'sec_fundamentals' not in st.session_state:
         st.session_state.sec_fundamentals = None
+    if 'securities_listing' not in st.session_state:
+        st.session_state.securities_listing = None
     
     if st.sidebar.button("Fetch Data", type="primary") and ticker:
         
@@ -241,6 +246,20 @@ def main():
         st.session_state.finnhub_financials = finnhub_financials
         st.session_state.finnhub_basic_financials = finnhub_basic_financials
         st.session_state.sec_fundamentals = sec_fundamentals
+        
+        # Fetch securities listing data (this is independent of ticker)
+        logger.info("Fetching securities listing data...")
+        try:
+            securities_listing = get_cached_alpha_vantage_listing_status()
+            if securities_listing:
+                logger.info(f"[SUCCESS] Securities listing fetch successful - {securities_listing.get('total_count', 0)} securities")
+                st.session_state.securities_listing = securities_listing
+            else:
+                logger.warning("[WARNING] Securities listing fetch returned empty result")
+        except Exception as e:
+            logger.error(f"❌ Securities listing API error: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            st.warning(f"Securities listing API error: {e}")
         
         # Display cache status and refresh controls
         st.divider()
@@ -427,11 +446,20 @@ def main():
                     st.session_state.finnhub_basic_financials = finnhub_basic_financials
                     st.rerun()
             render_finnhub_basic_financials_tab(ticker, st.session_state.finnhub_basic_financials)
-        
+
         with tab8:
             col1, col2 = st.columns([3, 1])
             with col2:
-                if st.button("🔄 Refresh Comparison", key="refresh_tab8"):
+                if st.button("🔄 Refresh Securities Listing", key="refresh_tab8"):
+                    securities_listing = get_cached_alpha_vantage_listing_status(force_refresh=True)
+                    st.session_state.securities_listing = securities_listing
+                    st.rerun()
+            render_securities_listing_tab(st.session_state.securities_listing)
+
+        with tab9:
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh Comparison", key="refresh_tab9"):
                     # Force refresh all sources for comparison
                     market_data = get_cached_alpha_vantage_data(ticker, force_refresh=True)
                     finnhub_data = get_cached_finnhub_data(ticker, force_refresh=True)
@@ -458,7 +486,7 @@ def main():
                     st.rerun()
             render_comparison_tab(ticker, st.session_state.market_data, st.session_state.finnhub_data, st.session_state.sec_fundamentals)
         
-        with tab9:
+        with tab10:
             render_debug_logs_tab()
     
     elif any([st.session_state.market_data, st.session_state.finnhub_data, st.session_state.sec_fundamentals]):
@@ -563,7 +591,16 @@ def main():
         with tab8:
             col1, col2 = st.columns([3, 1])
             with col2:
-                if st.button("🔄 Refresh Comparison", key="refresh_tab8"):
+                if st.button("🔄 Refresh Securities Listing", key="refresh_tab8"):
+                    securities_listing = get_cached_alpha_vantage_listing_status(force_refresh=True)
+                    st.session_state.securities_listing = securities_listing
+                    st.rerun()
+            render_securities_listing_tab(st.session_state.securities_listing)
+        
+        with tab9:
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("🔄 Refresh Comparison", key="refresh_tab9"):
                     market_data = get_cached_alpha_vantage_data(ticker, force_refresh=True)
                     finnhub_data = get_cached_finnhub_data(ticker, force_refresh=True)
                     sec_data = get_cached_sec_data(ticker, force_refresh=True)
@@ -588,7 +625,7 @@ def main():
                     st.rerun()
             render_comparison_tab(ticker, st.session_state.market_data, st.session_state.finnhub_data, st.session_state.sec_fundamentals)
         
-        with tab9:
+        with tab10:
             render_debug_logs_tab()
     
     else:

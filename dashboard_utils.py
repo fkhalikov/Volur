@@ -517,3 +517,70 @@ def get_cache_stats() -> Dict[str, Any]:
     """Get overall cache statistics."""
     cache = get_cache()
     return cache.get_cache_stats()
+
+
+def get_alpha_vantage_listing_status() -> Dict[str, Any]:
+    """Get Alpha Vantage listing status data (all US securities)."""
+    logger.info("Fetching Alpha Vantage listing status data")
+    
+    try:
+        if not settings.alpha_vantage_api_key:
+            logger.warning("Alpha Vantage API key not configured")
+            return {}
+        
+        # Alpha Vantage LISTING_STATUS endpoint
+        url = "https://www.alphavantage.co/query"
+        params = {
+            "function": "LISTING_STATUS",
+            "apikey": settings.alpha_vantage_api_key,
+            "datatype": "csv"
+        }
+        
+        logger.info("Fetching listing status from Alpha Vantage API")
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        
+        # Parse CSV data
+        csv_content = response.text
+        logger.info(f"Retrieved listing status data: {len(csv_content)} characters")
+        
+        # Parse CSV into list of dictionaries
+        import csv
+        import io
+        
+        csv_reader = csv.DictReader(io.StringIO(csv_content))
+        securities_data = list(csv_reader)
+        
+        logger.info(f"Parsed {len(securities_data)} securities from listing status")
+        
+        return {
+            "securities": securities_data,
+            "total_count": len(securities_data),
+            "raw_csv": csv_content
+        }
+        
+    except Exception as e:
+        logger.error(f"Alpha Vantage listing status API error: {e}")
+        return {}
+
+
+def get_cached_alpha_vantage_listing_status(force_refresh: bool = False) -> Dict[str, Any]:
+    """Get Alpha Vantage listing status data with MongoDB caching."""
+    cache = get_cache()
+    
+    # Check cache first (unless force refresh)
+    if not force_refresh:
+        cached_data = cache.get("alpha_vantage", "ALL", "listing_status")
+        if cached_data:
+            logger.info("Retrieved Alpha Vantage listing status from cache")
+            return cached_data["data"]
+    
+    # Fetch fresh data
+    logger.info("Fetching fresh Alpha Vantage listing status data")
+    data = get_alpha_vantage_listing_status()
+    
+    # Cache the data (with longer TTL since this changes infrequently)
+    if data:
+        cache.set("alpha_vantage", "ALL", "listing_status", data, ttl_hours=168)  # 7 days
+    
+    return data
