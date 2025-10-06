@@ -83,10 +83,38 @@ class SECSource:
 
     def _get_cik_from_ticker(self, ticker: str) -> Optional[str]:
         """Convert ticker symbol to CIK."""
-        # TODO: Implement ticker to CIK mapping
-        # This would typically involve querying SEC's ticker lookup API
-        # For now, return None to indicate not implemented
-        return None
+        try:
+            # Use SEC's company tickers API to get CIK
+            tickers_url = "https://www.sec.gov/files/company_tickers.json"
+            response = requests.get(tickers_url, headers=self.headers, timeout=30)
+            response.raise_for_status()
+            
+            tickers_data = response.json()
+            
+            # Find the CIK for the given ticker
+            for entry in tickers_data.values():
+                if entry.get('ticker', '').upper() == ticker.upper():
+                    cik = str(entry.get('cik_str', ''))
+                    return cik.zfill(10)  # SEC expects 10-digit CIK
+            
+            return None
+            
+        except Exception:
+            # Fallback: try some well-known ticker mappings
+            known_mappings = {
+                'AAPL': '0000320193',
+                'MSFT': '0000789019', 
+                'GOOGL': '0001652044',
+                'AMZN': '0001018724',
+                'TSLA': '0001318605',
+                'META': '0001326801',
+                'NVDA': '0001045810',
+                'BRK.A': '0001067983',
+                'BRK.B': '0001067983',
+                'JNJ': '0000200406',
+                'JPM': '0000019617'
+            }
+            return known_mappings.get(ticker.upper())
 
     def _get_latest_value(self, metric_data: Dict[str, Any]) -> Optional[float]:
         """Extract the latest value from SEC metric data."""

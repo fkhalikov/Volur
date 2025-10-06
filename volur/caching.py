@@ -27,7 +27,18 @@ class Cache:
         """Set value in cache with optional TTL."""
         if ttl is None:
             ttl = settings.cache_ttl_hours * 3600  # Convert hours to seconds
-        self._cache.set(key, value, expire=ttl)
+        
+        try:
+            self._cache.set(key, value, expire=ttl)
+        except Exception as e:
+            # If pickling fails, try to convert dataclass to dict
+            if hasattr(value, '__dataclass_fields__'):
+                try:
+                    dict_value = value.__dict__
+                    self._cache.set(key, dict_value, expire=ttl)
+                except Exception:
+                    # If all else fails, skip caching
+                    pass
 
     def clear(self) -> None:
         """Clear all cached values."""
