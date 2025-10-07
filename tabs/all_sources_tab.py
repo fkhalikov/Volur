@@ -3,14 +3,50 @@
 import streamlit as st
 import pandas as pd
 from typing import Dict, Any, Optional
-from dashboard_utils import format_currency, format_number, format_percentage
+from dashboard_utils import (
+    format_currency, format_number, format_percentage,
+    get_cached_alpha_vantage_data, get_cached_finnhub_data, get_cached_sec_data,
+    get_cache_info
+)
 
 
-def render_all_sources_tab(ticker: str, market_data: Optional[Dict[str, Any]], 
-                          finnhub_data: Optional[Dict[str, Any]], 
-                          sec_fundamentals: Optional[Any]):
+def render_all_sources_tab(ticker: str):
     """Render the All Sources Overview tab."""
     st.header(f"🔄 All Sources Overview for {ticker}")
+    
+    # Add refresh button
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("🔄 Refresh All Sources", key="refresh_all_sources"):
+            # Force refresh all sources
+            market_data = get_cached_alpha_vantage_data(ticker, force_refresh=True)
+            finnhub_data = get_cached_finnhub_data(ticker, force_refresh=True)
+            sec_data = get_cached_sec_data(ticker, force_refresh=True)
+            st.success("All sources refreshed!")
+            st.rerun()
+    
+    # Fetch data for this tab
+    market_data = get_cached_alpha_vantage_data(ticker)
+    finnhub_data = get_cached_finnhub_data(ticker)
+    sec_data = get_cached_sec_data(ticker)
+    
+    # Convert SEC data to Fundamentals object if available
+    sec_fundamentals = None
+    if sec_data:
+        from volur.plugins.base import Fundamentals
+        sec_fundamentals = Fundamentals(
+            ticker=sec_data.get("ticker", ticker),
+            trailing_pe=sec_data.get("trailing_pe"),
+            price_to_book=sec_data.get("price_to_book"),
+            roe=sec_data.get("roe"),
+            roa=sec_data.get("roa"),
+            debt_to_equity=sec_data.get("debt_to_equity"),
+            free_cash_flow=sec_data.get("free_cash_flow"),
+            revenue=sec_data.get("revenue"),
+            operating_margin=sec_data.get("operating_margin"),
+            sector=sec_data.get("sector"),
+            name=sec_data.get("name")
+        )
     
     # Data source status
     st.subheader("📊 Data Source Status")

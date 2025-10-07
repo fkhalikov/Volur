@@ -58,9 +58,22 @@ def display_finnhub_news(news_data: List[Dict[str, Any]], ticker: str):
             st.divider()
 
 
-def render_finnhub_news_tab(ticker: str, finnhub_news: List[Dict[str, Any]]):
+def render_finnhub_news_tab(ticker: str):
     """Render the Finnhub News tab."""
     st.header(f"📰 Finnhub News for {ticker}")
+    
+    # Add refresh button
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("🔄 Refresh News", key="refresh_finnhub_news"):
+            from dashboard_utils import get_cached_finnhub_news
+            finnhub_news = get_cached_finnhub_news(ticker, force_refresh=True)
+            st.success("Finnhub news refreshed!")
+            st.rerun()
+    
+    # Fetch data for this tab
+    from dashboard_utils import get_cached_finnhub_news
+    finnhub_news = get_cached_finnhub_news(ticker)
     
     # Display cache status
     from dashboard_utils import get_cache_info

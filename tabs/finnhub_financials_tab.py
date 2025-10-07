@@ -118,9 +118,22 @@ def display_financials_summary(financials_data: Dict[str, Any]):
         st.info("No key metrics found in the financial data")
 
 
-def render_finnhub_financials_tab(ticker: str, financials_data: Dict[str, Any]):
+def render_finnhub_financials_tab(ticker: str):
     """Render the Finnhub Financials tab."""
     st.header(f"📊 Finnhub Financial Statements for {ticker}")
+    
+    # Add refresh button
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("🔄 Refresh Financials", key="refresh_finnhub_financials"):
+            from dashboard_utils import get_cached_finnhub_financials
+            financials_data = get_cached_finnhub_financials(ticker, force_refresh=True)
+            st.success("Finnhub financials refreshed!")
+            st.rerun()
+    
+    # Fetch data for this tab
+    from dashboard_utils import get_cached_finnhub_financials
+    financials_data = get_cached_finnhub_financials(ticker)
     
     if financials_data and 'data' in financials_data and financials_data['data']:
         # Display summary metrics

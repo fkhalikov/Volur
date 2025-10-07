@@ -74,9 +74,22 @@ def display_finnhub_data(data: Dict[str, Any]):
             st.metric("Website", "N/A")
 
 
-def render_finnhub_tab(ticker: str, finnhub_data: Optional[Dict[str, Any]]):
+def render_finnhub_tab(ticker: str):
     """Render the Finnhub tab."""
     st.header(f"📊 Finnhub Data for {ticker}")
+    
+    # Add refresh button
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("🔄 Refresh Finnhub", key="refresh_finnhub"):
+            from dashboard_utils import get_cached_finnhub_data
+            finnhub_data = get_cached_finnhub_data(ticker, force_refresh=True)
+            st.success("Finnhub data refreshed!")
+            st.rerun()
+    
+    # Fetch data for this tab
+    from dashboard_utils import get_cached_finnhub_data
+    finnhub_data = get_cached_finnhub_data(ticker)
     
     # Display cache status
     from dashboard_utils import get_cache_info

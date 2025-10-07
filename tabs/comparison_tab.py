@@ -7,11 +7,44 @@ from volur.plugins.base import Fundamentals
 from dashboard_utils import format_currency, format_number, format_percentage
 
 
-def render_comparison_tab(ticker: str, market_data: Optional[Dict[str, Any]], 
-                        finnhub_data: Optional[Dict[str, Any]], 
-                        sec_fundamentals: Optional[Fundamentals]):
+def render_comparison_tab(ticker: str):
     """Render the Comparison tab."""
     st.header(f"📊 Detailed Comparison for {ticker}")
+    
+    # Add refresh button
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("🔄 Refresh Comparison", key="refresh_comparison"):
+            from dashboard_utils import get_cached_alpha_vantage_data, get_cached_finnhub_data, get_cached_sec_data
+            market_data = get_cached_alpha_vantage_data(ticker, force_refresh=True)
+            finnhub_data = get_cached_finnhub_data(ticker, force_refresh=True)
+            sec_data = get_cached_sec_data(ticker, force_refresh=True)
+            st.success("Comparison data refreshed!")
+            st.rerun()
+    
+    # Fetch data for this tab
+    from dashboard_utils import get_cached_alpha_vantage_data, get_cached_finnhub_data, get_cached_sec_data
+    market_data = get_cached_alpha_vantage_data(ticker)
+    finnhub_data = get_cached_finnhub_data(ticker)
+    sec_data = get_cached_sec_data(ticker)
+    
+    # Convert SEC data to Fundamentals object if available
+    sec_fundamentals = None
+    if sec_data:
+        from volur.plugins.base import Fundamentals
+        sec_fundamentals = Fundamentals(
+            ticker=sec_data.get("ticker", ticker),
+            trailing_pe=sec_data.get("trailing_pe"),
+            price_to_book=sec_data.get("price_to_book"),
+            roe=sec_data.get("roe"),
+            roa=sec_data.get("roa"),
+            debt_to_equity=sec_data.get("debt_to_equity"),
+            free_cash_flow=sec_data.get("free_cash_flow"),
+            revenue=sec_data.get("revenue"),
+            operating_margin=sec_data.get("operating_margin"),
+            sector=sec_data.get("sector"),
+            name=sec_data.get("name")
+        )
     
     if market_data or finnhub_data or sec_fundamentals:
         st.subheader("📈 Financial Metrics Comparison")
